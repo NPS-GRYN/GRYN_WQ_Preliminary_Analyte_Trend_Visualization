@@ -1,0 +1,287 @@
+---
+title: "R Project to Help Visual Long-term Trends in Analytes"
+subtitle: "Snake River at Flagg and Moose"
+author: "Ben LaFrance, benjamin_lafrance@nps.gov"
+date: "2025-01-30"
+output: html_document
+---
+
+The following code blocks enable the generation of figures and key data/numbers that
+GRYN uses for their annual water quality reports.
+
+```{r LoadLibraries, message=FALSE, warning=FALSE, include=FALSE, results=FALSE}
+
+# List of packages: checks whether they are installed
+packages <- c('dataRetrieval', 'dplyr', 'ggplot2')
+not_installed <- packages[!(packages %in% installed.packages()[ , "Package"])]
+
+# Prompts installation if not installed
+if(length(not_installed) > 0) {
+  if (menu(c("Yes", "No"),
+         title = paste("Are you sure you want to install package", 
+                       not_installed)) == "1") {
+    install.packages(not_installed)
+  } else {
+    print("Cancelling installation")
+  }
+}
+
+# Load packages
+invisible(lapply(packages, library, character.only = TRUE))
+```
+
+```{r DefineSites, include=FALSE}
+
+# Store all relevant stream gage data
+streamgages <- tribble(
+  ~Site,  ~GageID,    ~StartDate,  ~EndDate, ~SiteName,                                  ~WQX_ID,
+  "SNR1", "13010065", "1984-10-01", "",      "Snake River at Flagg, WY",                 "11NPSWRD_WQX-GRTE_SNR01",
+  "SNR2", "13013650", "1995-10-01", "",      "Snake River at Moose, WY",                 "11NPSWRD_WQX-GRTE_SNR02",
+  "YRCS", "06191500", "1911-01-01", "",      "Yellowstone River at Corwin Springs",      "11NPSWRD_WQX-YELL_YS549.7M",
+  "LMR" , "06188000", "1923-10-01", "",      "Lamar River near Tower Junction, WY",      "11NPSWRD_WQX-YELL_LM000.5M",   
+  "MDR" , "06037500", "1914-10-01", "",      "Madison River near West Yellowstone, MT",  "11NPSWRD_WQX-YELL_MDR",
+  "SBC" , "06187915", "1999-10-01", "",      "Soda Butte Creek near Silver Gate, MT",    "11NPSWRD_WQX-YELL_SB015.7A",
+  "SHR1", "06285100", "1966-10-01", "",      "Shoshone River near Lovell, WY",           "11NPSWRD_WQX-BICA_SHR1",
+  "BHR1", "06287000", "1968-10-01", "",      "Bighorn River near St. Xavier, MT",        "11NPSWRD_WQX-BICA_BHR1",
+  "BHR2", "06279500", "1929-04-01", "",      "Bighorn River at Kane, WY",                "11NPSWRD_WQX-BICA_BHR2"
+  )
+
+
+```
+
+```{r DownloadAllDischargeDataFromUSGS}
+# Function to get data for all GRYN associated Stream Gage Sites
+# This will take 1-2 minutes, and output a few lines about how many days worth of data there are
+
+# Update idea - do we need to do this for all sites, or just the site of interest?
+
+get_gage_data <- function(site) {
+  print(site$Site)
+  Daily <- readNWISDaily(site$GageID, "00060", site$StartDate, site$EndDate) |>
+    filter(grepl('A', Qualifier)) |>
+    mutate(cfs = Q * 35.314666212661, Year = trunc(DecYear))
+  
+  # Return all of the discharge data for all of the sites
+  return(tibble(Daily = list(Daily), 
+                Site = site$Site, 
+                SiteName = site$SiteName, 
+                StartYear = year(ymd(site$StartDate)), 
+                EndYear = if_else(site$EndDate == "", year(Sys.Date()), year(ymd(site$EndDate)))))
+}
+# Get data for all sites
+gage_data <- bind_rows(lapply(split(streamgages, seq(nrow(streamgages))), get_gage_data))
+
+```
+
+
+```{r DefineAnalytes}
+
+# Update idea: add the Field Parameters to this tribble? Wont work as mg/L anymore though so could be confusing
+# Update idea: add the BICA and YELL parameters that don't overlap with GRTE
+
+# Tribble of all the GRTE Analytes you can look up 
+all_analytes <- tribble(
+  ~Analyte,                         ~CharacteristicName,   ~ResultSampleFractionText,    ~WYChronicAquaticLifeCriterion,  ~WYHumanHeathCriterion,
+  "Total Arsenic",                  "Arsenic",             "Total",                      0.150,                            0.010,
+  "Dissolved Arsenic",              "Arsenic",             "Dissolved",                  0.150,                            0.010,
+  "Total Calcium",                  "Calcium",             "Total",                      -9999,                            -9999,              
+  "Dissolved Calcium",              "Calcium",             "Dissolved",                  -9999,                            -9999,
+  "Total Copper",                   "Copper",              "Total",                      0.090,                            1.000,
+  "Dissolved Copper",               "Copper",              "Dissolved",                  -9999,                            -9999,
+  "Total Iron" ,                    "Iron",                "Total",                      1.000,                            0.300,
+  "Dissolved Iron",                 "Iron",                "Dissolved",                  1.000,                            1.000,         
+  "Total Magnesium",                "Magnesium",           "Total",                      -9999,                            -9999,
+  "Dissolved Magnesium",            "Magnesium",           "Dissolved",                  -9999,                            -9999,      
+  "Total Potassium",                "Potassium",           "Total",                      -9999,                            -9999,
+  "Dissolved Potassium",            "Potassium",           "Dissolved",                  -9999,                            -9999,
+  "Total Selenium",                 "Selenium",            "Total",                      0.005,                            0.050,
+  "Dissolved Selenium",             "Selenium",            "Dissolved",                  0.005,                            0.050,
+  "Total Sodium",                   "Sodium",              "Total",                      -9999,                            -9999,
+  "Dissolved Sodium",               "Sodium",              "Dissolved",                  -9999,                            -9999,                  
+  
+  "Dissolved Chloride (Cl)",        "Chloride",            "Dissolved",                  230.0,                            -9999,
+  "Sulfate (S04)",                  "Sulfate",             "Dissolved",                  -9999,                            -9999,
+  "Total Phosphorus",               "Phosphorus",          "Total",                      -9999,                            -9999,                                        
+  "Orthophosphate (Ortho-P)",       "Orthophosphate",      "Dissolved",                  -9999,                            -9999,                                         
+  "Hardness/Alkalinity as CaCO3",   "Hardness, carbonate", "Total",                      -9999,                            -9999,                                         
+ 
+  "Ammonia as Nitrogen (NH3 as N)", "Ammonia",             "Total",                      -9999,                            -9999,
+  "Nitrate + Nitrite as Nitrogen", "Nitrate + Nitrite",    "Total",                      1.000,                            -9999, 
+  "Total Suspended Solids (TSS)", "Total suspended solids", "Non-Filterable (Particle)", -9999,                            -9999       
+)
+
+# Ammonia criteria is pH and temperature dependent, see: https://www.epa.gov/sites/default/files/2014-12/documents/wy-chapter1.pdf
+# In tables, we've been recording the column name as "Nitrate + Nitrite as Nitrogen (NO3 + NO2 as N)"
+```
+
+
+```{r FunctionGetAnalyteDataAndVisualizePerYear}
+
+# Define a function to pull and process water quality data
+visualize_analyte_data_per_year <- function(site_of_interest, analyte_name, result_fraction) {
+  
+  # Retrieve the WQX ID and Site Name from the streamgages tribble
+  site_info <- streamgages %>% filter(Site == site_of_interest)
+  
+  if (nrow(site_info) == 0) {
+    stop("Site not found")
+  }
+  
+  site_id <- site_info$WQX_ID
+  site_name <- site_info$SiteName
+
+  # Read the data from the Water Quality Portal
+  data <- dataRetrieval::readWQPdata(siteid = site_id, dataProfile = "resultPhysChem")
+
+  # Filter the data using the specified analyte and result fraction
+  filtered_data <- data |>
+    filter(ActivityStartDate >= "2006-01-01" & ActivityStartDate <= "2023-12-31") |>
+    filter(CharacteristicName == analyte_name & ResultSampleFractionText == result_fraction) |>
+    select(ActivityStartDate, CharacteristicName, ResultSampleFractionText, 
+           ResultMeasureValue, ResultMeasure.MeasureUnitCode, 
+           DetectionQuantitationLimitMeasure.MeasureValue)
+
+  # Replace NA values and prepare the data for plotting
+  processed_data <- filtered_data |>
+    mutate(ResultMeasureValue = as.numeric(coalesce(ResultMeasureValue, 
+        as.character(DetectionQuantitationLimitMeasure.MeasureValue)))) |>
+    group_by(ActivityStartDate) |>
+    slice(1) |> 
+    ungroup() |>
+    mutate(Year = as.numeric(format(ActivityStartDate, "%Y")),
+           SiteName = site_name)
+
+  # Create the plot
+  plot <- ggplot(processed_data, aes(x = Year, y = ResultMeasureValue, color = as.factor(Year))) +
+    geom_line() +
+    geom_point() +
+    labs(title = paste("Annual", result_fraction, analyte_name, "Levels for", site_name),
+         x = "Year",
+         y = paste(analyte_name, "(", result_fraction, "mg/L)", sep = ""),
+         color = "Year") +
+    theme_minimal() +
+    scale_color_discrete(type = rainbow(n = length(unique(processed_data$Year))))
+
+  # Return both processed data and plot
+  return(list(data = processed_data, plot = plot))
+}
+
+# Example usage for Total Arsenic
+# SNR1_total_Arsenic <- visualize_analyte_data_per_year("SNR1", "Arsenic", "Total")
+
+```
+
+
+```{r PerYearVariationPlot}
+# With the function provided above, you should be able to pick any site, see the examples below
+# Allowed sites are provided in the "DefineSites" code block
+# You should also be able to pick any analyte in the "DefineAnalytes" code block
+
+SNR1_total_Arsenic <- visualize_analyte_data_per_year("SNR1", "Arsenic", "Total")
+SNR2_dissolved_Arsenic <- visualize_analyte_data_per_year("SNR2", "Arsenic", "Dissolved")
+MDR_total_phos <- visualize_analyte_data_per_year("MDR", "Phosphorus", "Total")
+
+# Generate the graph
+SNR1_total_Arsenic
+SNR2_dissolved_Arsenic
+MDR_total_phos
+```
+Next steps using the above code:
+1. Visualize all analyte and location combinations available
+2. Comb for outliers and either flag or correct in NPStoret before publishing 2024 data. 
+3. Determine a priority list of analytes and sites for future trend analysis. Some analytes will be <RL too often to have a meaningful sample size.
+
+The above code provides a way to look at the annual variation. Another way to visualize the data is to look at how the analytes vary with discharge throughout the year (and then stack each year on the same graph). That code is privded below:
+
+```{r FunctionGetAnalyteDataAndVisualizeAnnualTrend}
+
+# Define a function to pull and process water quality data
+visualize_analyte_data_annual_trend <- function(site_of_interest, analyte_name, result_fraction) {
+  
+  # Retrieve the WQX ID and Site Name from the streamgages tribble
+  site_info <- streamgages %>% filter(Site == site_of_interest)
+  
+  if (nrow(site_info) == 0) {
+    stop("Site not found")
+  }
+  
+  site_id <- site_info$WQX_ID
+  site_name <- site_info$SiteName
+
+  # Read the data from the Water Quality Portal
+  data <- dataRetrieval::readWQPdata(siteid = site_id, dataProfile = "resultPhysChem")
+
+  # Filter the data using the specified analyte and result fraction
+  filtered_data <- data |>
+    filter(ActivityStartDate >= "2006-01-01" & ActivityStartDate <= "2023-12-31") |>
+    filter(CharacteristicName == analyte_name & ResultSampleFractionText == result_fraction) |>
+    select(ActivityStartDate, CharacteristicName, ResultSampleFractionText, 
+           ResultMeasureValue, ResultMeasure.MeasureUnitCode, 
+           DetectionQuantitationLimitMeasure.MeasureValue)
+
+ # Replace NA values and prepare the data for plotting
+  processed_data <- filtered_data |>
+    mutate(ResultMeasureValue = as.numeric(coalesce(ResultMeasureValue, 
+        as.character(DetectionQuantitationLimitMeasure.MeasureValue)))) |>
+    group_by(ActivityStartDate) |>
+    slice(1) |> 
+    ungroup() |>
+    mutate(Year = as.factor(year(ActivityStartDate)),
+           OrdinalDate = yday(ActivityStartDate),
+           SiteName = site_name)
+
+  # Specify a clear color palette
+  color_palette <- c("2006" = "red", "2007" = "blue", "2008" = "green", 
+                     "2009" = "orange", "2010" = "purple", "2011" = "cyan", 
+                     "2012" = "magenta", "2013" = "brown", "2014" = "pink", 
+                     "2015" = "darkgreen", "2016" = "darkblue", "2017" = "darkred", 
+                     "2018" = "gold", "2019" = "violet", "2020" = "lightblue", 
+                     "2021" = "lightgreen", "2022" = "darkorange", "2023" = "darkviolet")
+  
+  # Create the plot with OrdinalDate as the x-axis
+  plot <- ggplot(processed_data, aes(x = OrdinalDate, y = ResultMeasureValue, group = Year, color = Year)) +
+    geom_line(size = 1) +  # Adjust line thickness for better visibility
+    geom_point(size = 1) +  # Adjust point size for better visibility
+    labs(title = paste(analyte_name, "Levels by Ordinal Date at", site_name),
+         x = "Ordinal Date",
+         y = paste(analyte_name, "(", result_fraction, "mg/L)", sep = ""),
+         color = "Year") +
+    theme_minimal() +
+    scale_color_manual(values = color_palette) +  # Apply the clear color palette
+    scale_x_continuous(breaks = seq(1, 366, by = 30),  # Adjust x-axis ticks
+                       labels = function(x) {
+                         month.name[x %/% 30 + 1]
+                       })
+
+  # Return both processed data and plot
+  return(list(data = processed_data, plot = plot))
+}
+
+# Example usage for Total Arsenic
+#arsenic_results <- visualize_analyte_data_annual_trend("SNR1", "Arsenic", "Total")
+
+
+```
+
+
+```{r AnnualTrendPlotPerYear}
+BHR1_mg_total <- visualize_analyte_data_annual_trend("BHR1", "Magnesium", "Total")
+YRCS_na_dissolved <- visualize_analyte_data_annual_trend("YRCS", "Sodium", "Dissolved")
+
+BHR1_mg_total
+YRCS_na_dissolved
+```
+
+Other things to do:
+1. Compare a single analyte across all monitoring sites
+2. Compare all analyes across a single monitoring site
+3. Develop a single page reference guide that we can use when lab data is received.
+     a. Allow GRYN to immediately verify the lab data is within expected parameters.
+     b. No longer have to input lab data into excel spreadsheet.
+
+
+Last modified, 2025-01-30.
+Ben LaFrance, Physical Scientist at the Greater Yellowstone Network
+e-mail: benjamin_lafrance@nps.gov
+
+End of script.

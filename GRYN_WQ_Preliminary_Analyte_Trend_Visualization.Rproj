@@ -1,0 +1,16 @@
+Version: 1.0
+ProjectId: ec85c16a-6e05-47c0-ad59-5727fd0320ce
+
+RestoreWorkspace: No
+SaveWorkspace: No
+AlwaysSaveHistory: Default
+
+EnableCodeIndexing: Yes
+UseSpacesForTab: Yes
+NumSpacesForTab: 2
+Encoding: UTF-8
+
+RnwWeave: Sweave
+LaTeX: pdfLaTeX
+
+ProjectName: Preliminary_Analyte_Visualziation
